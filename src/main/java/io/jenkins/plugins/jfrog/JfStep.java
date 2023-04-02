@@ -36,9 +36,10 @@ import static io.jenkins.plugins.jfrog.JfrogInstallation.JFROG_BINARY_PATH;
  * @author gail
  */
 @SuppressWarnings("unused")
-public class JfStep<T> extends Builder implements SimpleBuildStep {
+public class JfStep extends Builder implements SimpleBuildStep {
     static final String STEP_NAME = "jf";
     protected String[] args;
+    private String output;
 
     @DataBoundConstructor
     public JfStep(Object args) {
@@ -78,13 +79,14 @@ public class JfStep<T> extends Builder implements SimpleBuildStep {
             builder = builder.toWindowsCommand();
         }
 
-        try {
-            Launcher.ProcStarter jfLauncher = setupJFrogEnvironment(run, env, launcher, listener, workspace, jfrogBinaryPath, isWindows);
+        try (JenkinsJFrogLog logger = new JenkinsJFrogLog(listener)) {
+            Launcher.ProcStarter jfLauncher = setupJFrogEnvironment(run, env, launcher, logger, workspace, jfrogBinaryPath, isWindows);
             // Running the 'jf' command
             int exitValue = jfLauncher.cmds(builder).join();
             if (exitValue != 0) {
                 throw new RuntimeException("Running 'jf' command failed with exit code " + exitValue);
             }
+            this.output = logger.getOutput();
         } catch (Exception e) {
             String errorMessage = "Couldn't execute 'jf' command. " + ExceptionUtils.getRootCauseMessage(e);
             throw new RuntimeException(errorMessage, e);
@@ -223,9 +225,52 @@ public class JfStep<T> extends Builder implements SimpleBuildStep {
 
     }
 
+//    public static class Execution extends SynchronousNonBlockingStepExecution<String> {
+//        protected static final long serialVersionUID = 1L;
+//        private transient final JfStep step;
+//
+//        @Inject
+//        public Execution(JfStep step, StepContext context) throws IOException, InterruptedException {
+//            super(context);
+//            this.step = step;
+//        }
+//
+//        @Override
+//        protected String run() throws Exception {
+//            StepContext ctx = this.getContext();
+//            FilePath workspace = ctx.get(FilePath.class);
+//            Run<?, ?> run = (Run<?, ?>) Objects.requireNonNull(ctx.get(Run.class));
+//            Launcher launcher = ctx.get(Launcher.class);
+//            TaskListener listener = Objects.requireNonNull(ctx.get(TaskListener.class));
+//            EnvVars env = Objects.requireNonNull(ctx.get(EnvVars.class));
+//            if (this.step.requiresWorkspace()) {
+//                if (workspace == null) {
+//                    throw new MissingContextVariableException(FilePath.class);
+//                }
+//
+//                if (launcher == null) {
+//                    throw new MissingContextVariableException(Launcher.class);
+//                }
+//            }
+//
+//            if (workspace != null) {
+//                workspace.mkdirs();
+//            }
+//
+//            if (workspace != null && launcher != null) {
+//                this.step.perform(run, workspace, env, launcher, listener);
+//            } else {
+//                this.step.perform(run, env, listener);
+//            }
+//
+//            return this.step.output;
+//        }
+//    }
+
     @Symbol("jf")
     @Extension
     public static final class DescriptorImpl extends BuildStepDescriptor<Builder> {
+
         @Nonnull
         @Override
         public String getDisplayName() {
